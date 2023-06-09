@@ -426,21 +426,27 @@ INLINE void check_sentinel(tlsf_block_t *block)
 
 static bool arena_grow(tlsf_t *t, size_t size)
 {
+    //找到新的 size
     size_t req_size =
         (t->size ? t->size + BLOCK_OVERHEAD : 2 * BLOCK_OVERHEAD) + size;
+    //可不可以給我這個 size
     void *addr = tlsf_resize(t, req_size);
-    if (!addr)
+    if (!addr){
         return false;
+    }
     ASSERT((size_t) addr % ALIGN_SIZE == 0, "wrong heap alignment address");
+    //找到增加空間後最新 block 的位置
     tlsf_block_t *block =
         to_block(t->size ? (char *) addr + t->size - 2 * BLOCK_OVERHEAD
                          : (char *) addr - BLOCK_OVERHEAD);
     if (!t->size)
         block->header = 0;
     check_sentinel(block);
+    //設定新得到的 block
     block->header |= size | BLOCK_BIT_FREE;
     block = block_merge_prev(t, block);
     block_insert(t, block);
+    //設定新的 sentinel
     tlsf_block_t *sentinel = block_link_next(block);
     sentinel->header = BLOCK_BIT_PREV_FREE;
     t->size = req_size;
@@ -450,13 +456,17 @@ static bool arena_grow(tlsf_t *t, size_t size)
 
 static void arena_shrink(tlsf_t *t, tlsf_block_t *block)
 {
+    //新的 free block 是最尾（下一個是 sentinel）就把空間還回去
     check_sentinel(block_next(block));
     size_t size = block_size(block);
     ASSERT(t->size + BLOCK_OVERHEAD >= size, "invalid heap size before shrink");
+    //刪掉 free block 的 size
     t->size = t->size - size - BLOCK_OVERHEAD;
+    //只剩 sentinel 
     if (t->size == BLOCK_OVERHEAD)
         t->size = 0;
     tlsf_resize(t, t->size);
+    //還有其他 block，設定新 sentinel
     if (t->size) {
         block->header = 0;
         check_sentinel(block);
@@ -469,15 +479,50 @@ INLINE tlsf_block_t *block_find_free(tlsf_t *t, size_t size)
     uint32_t fl, sl;
     mapping(rounded, &fl, &sl);
     tlsf_block_t *block = block_find_suitable(t, &fl, &sl);
+
     if (UNLIKELY(!block)) {
         if (!arena_grow(t, rounded))
             return NULL;
         block = block_find_suitable(t, &fl, &sl);
         ASSERT(block, "no block found");
     }
+
     ASSERT(block_size(block) >= size, "insufficient block size");
     remove_free_block(t, block, fl, sl);
     return block;
+}
+
+static size_t align_down(size_t x, size_t align)
+{
+	ASSERT(0 == (align & (align - 1)), "must align to a power of two");
+	return x - (x & (align - 1));
+}
+
+bool tlsf_add_pool(tlsf_t *t, void* mem, size_t mem_size)
+{
+	tlsf_block_t * block;
+	tlsf_block_t * next;
+
+	const size_t pool_bytes = align_down(mem_size - 2*BLOCK_OVERHEAD, ALIGN_SIZE);
+
+    ASSERT((size_t) mem % ALIGN_SIZE == 0, "wrong heap alignment address");
+
+    block = to_block((char *) mem - BLOCK_OVERHEAD);
+    block->header |= pool_bytes | BLOCK_BIT_FREE;
+	block_insert(t, block);
+
+	next = block_link_next(block);
+    next->header = BLOCK_BIT_PREV_FREE;
+    t->size = mem_size;
+
+	return true;
+}
+
+
+void tlsf_init(tlsf_t *t, void* mem, size_t mem_size)
+{
+    *t = TLSF_INIT;
+	tlsf_add_pool(t, mem, mem_size);
 }
 
 void *tlsf_malloc(tlsf_t *t, size_t size)
@@ -486,6 +531,7 @@ void *tlsf_malloc(tlsf_t *t, size_t size)
     if (UNLIKELY(size > TLSF_MAX_SIZE))
         return NULL;
     tlsf_block_t *block = block_find_free(t, size);
+    ASSERT(block,"apple");
     if (UNLIKELY(!block))
         return NULL;
     return block_use(t, block, size);
@@ -528,10 +574,13 @@ void tlsf_free(tlsf_t *t, void *mem)
     block = block_merge_prev(t, block);
     block = block_merge_next(t, block);
 
+
     if (UNLIKELY(!block_size(block_next(block))))
         arena_shrink(t, block);
     else
         block_insert(t, block);
+
+    //block_insert(t, block);
 }
 
 void *tlsf_realloc(tlsf_t *t, void *mem, size_t size)

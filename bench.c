@@ -123,7 +123,7 @@ void *tlsf_resize(tlsf_t *_t, size_t req_size)
 
 int main(int argc, char **argv)
 {
-    size_t blk_min = 512, blk_max = 512, num_blks = 10000;
+    size_t blk_start = 0, blk_limit = 16384, num_blks = 10000;
     size_t loops = 10000000;
     bool clear = false;
     int opt;
@@ -131,7 +131,7 @@ int main(int argc, char **argv)
     while ((opt = getopt(argc, argv, "s:l:r:t:n:b:ch")) > 0) {
         switch (opt) {
         case 's':
-            parse_size_arg(optarg, argv[0], &blk_min, &blk_max);
+            parse_size_arg(optarg, argv[0], &blk_start, &blk_limit);
             break;
         case 'l':
             loops = parse_int_arg(optarg, argv[0]);
@@ -151,39 +151,123 @@ int main(int argc, char **argv)
         }
     }
 
-    max_size = blk_max * num_blks;
+
+    FILE *fptr_ra;
+    fptr_ra = fopen("./txt/tlsf_bench_range_all.txt", "w");
+    FILE *fptr_rb;
+    fptr_rb = fopen("./txt/tlsf_bench_range_big.txt", "w");
+    FILE *fptr_rs;
+    fptr_rs = fopen("./txt/tlsf_bench_range_small.txt", "w");
+    FILE *fptr_as;
+    fptr_as = fopen("./txt/tlsf_bench_all_size.txt", "w");
+/*
+    FILE *fptr_ac;
+    fptr_ac = fopen("./txt/tlsf_bench_all_size_self_debug.txt", "w");
+*/
+
+    max_size = blk_limit * num_blks * 2;
     mem = malloc(max_size);
+    if(!mem){
+        printf("error\n");
+    }
 
     void **blk_array = (void **) calloc(num_blks, sizeof(void *));
     assert(blk_array);
 
     struct timespec start, end;
 
-    int err = clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-    assert(err == 0);
+    int err;
+    for(int i=0;i<50;i++){
+        printf("now blk_min:%zu blk_max:%zu\n", blk_start, blk_limit);
+        t = TLSF_INIT;
+        err = clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
+        assert(err == 0);
+        run_alloc_benchmark(loops, blk_start, blk_limit, blk_array, num_blks, clear);
+        err = clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end);
+        assert(err == 0);
+        double elapsed = (double) (end.tv_sec - start.tv_sec) +
+                 (double) (end.tv_nsec - start.tv_nsec) * 1e-9;
+        printf("%zu  %zu %.6f %.3f\n", blk_start, blk_limit, elapsed, elapsed / (double) loops * 1e6);
+        fprintf(fptr_ra, "%zu  %zu %.6f %.3f\n", blk_start, blk_limit, elapsed, elapsed / (double) loops * 1e6);
+        memset(blk_array, 0, sizeof(*blk_array) * num_blks);
+        memset(mem, 0, max_size);
+    }
 
-    printf("blk_min=%zu to blk_max=%zu\n", blk_min, blk_max);
+    for(int i=0;i<50;i++){
+        printf("now blk_min:%zu blk_max:%zu\n", blk_limit/2, blk_limit);
+        t = TLSF_INIT;
+        err = clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
+        assert(err == 0);
+        run_alloc_benchmark(loops, blk_limit/2, blk_limit, blk_array, num_blks, clear);
+        err = clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end);
+        assert(err == 0);
+        double elapsed = (double) (end.tv_sec - start.tv_sec) +
+                 (double) (end.tv_nsec - start.tv_nsec) * 1e-9;
+        printf("%zu  %zu %.6f %.3f\n", blk_limit/2, blk_limit, elapsed, elapsed / (double) loops * 1e6);
+        fprintf(fptr_rb, "%zu  %zu %.6f %.3f\n", blk_limit/2, blk_limit, elapsed, elapsed / (double) loops * 1e6);
+        memset(blk_array, 0, sizeof(*blk_array) * num_blks);
+        memset(mem, 0, max_size);
+    }
 
-    run_alloc_benchmark(loops, blk_min, blk_max, blk_array, num_blks, clear);
+    for(int i=0;i<50;i++){
+        printf("now blk_min:%zu blk_max:%zu\n", blk_start, blk_limit/2);
+        t = TLSF_INIT;
+        err = clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
+        assert(err == 0);
+        run_alloc_benchmark(loops, blk_start, blk_limit/2, blk_array, num_blks, clear);
+        err = clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end);
+        assert(err == 0);
+        double elapsed = (double) (end.tv_sec - start.tv_sec) +
+                 (double) (end.tv_nsec - start.tv_nsec) * 1e-9;
+        printf("%zu  %zu %.6f %.3f\n", blk_start, blk_limit/2, elapsed, elapsed / (double) loops * 1e6);
+        fprintf(fptr_rs, "%zu  %zu %.6f %.3f\n", blk_start, blk_limit/2, elapsed, elapsed / (double) loops * 1e6);
+        memset(blk_array, 0, sizeof(*blk_array) * num_blks);
+        memset(mem, 0, max_size);
+    }
 
-    err = clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end);
-    assert(err == 0);
+    while(blk_start<blk_limit){
+        printf("now blk_min:%zu blk_max:%zu\n", blk_start, blk_start+64);
+        t = TLSF_INIT;
+        err = clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
+        assert(err == 0);
+        run_alloc_benchmark(loops, blk_start, blk_start+64, blk_array, num_blks, clear);
+        err = clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end);
+        assert(err == 0);
+        double elapsed = (double) (end.tv_sec - start.tv_sec) +
+                 (double) (end.tv_nsec - start.tv_nsec) * 1e-9;
+        printf("%zu  %zu %.6f %.3f\n", blk_start, blk_start+64, elapsed, elapsed / (double) loops * 1e6);
+        fprintf(fptr_as, "%zu  %zu %.6f %.3f\n", blk_start, blk_start+64, elapsed, elapsed / (double) loops * 1e6);
+        memset(blk_array, 0, sizeof(*blk_array) * num_blks);
+        memset(mem, 0, max_size);
+        blk_start+=64;
+    }
+
+/* use it after u comment the arena grow/shrink code in free and find free
+    while(blk_start<blk_limit){
+        printf("now blk_min:%zu blk_max:%zu\n", blk_start, blk_start+64);
+        err = clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
+        assert(err == 0);
+        tlsf_init(&t, mem, max_size);
+        run_alloc_benchmark(loops, blk_start, blk_start+64, blk_array, num_blks, clear);
+        err = clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &end);
+        assert(err == 0);
+        double elapsed = (double) (end.tv_sec - start.tv_sec) +
+                 (double) (end.tv_nsec - start.tv_nsec) * 1e-9;
+        printf("%zu  %zu %.6f %.3f\n", blk_start, blk_start+64, elapsed, elapsed / (double) loops * 1e6);
+        fprintf(fptr_ac, "%zu  %zu %.6f %.3f\n", blk_start, blk_start+64, elapsed, elapsed / (double) loops * 1e6);
+        memset(blk_array, 0, sizeof(*blk_array) * num_blks);
+        memset(mem, 0, max_size);
+        blk_start+=64;
+    }
+*/
+
+    fclose(fptr_rb);
+    fclose(fptr_ra);
+    fclose(fptr_rs);
+    fclose(fptr_as);
+    //fclose(fptr_ac);
+
     free(blk_array);
-
-    double elapsed = (double) (end.tv_sec - start.tv_sec) +
-                     (double) (end.tv_nsec - start.tv_nsec) * 1e-9;
-
-    struct rusage usage;
-    err = getrusage(RUSAGE_SELF, &usage);
-    assert(err == 0);
-
-    /* Dump both machine and human readable versions */
-    printf(
-        "%zu:%zu:%zu:%u:%lu:%.6f: took %.6f s for %zu malloc/free\nbenchmark "
-        "loops of %zu-%zu "
-        "bytes.  ~%.3f us per loop\n",
-        blk_min, blk_max, loops, clear, usage.ru_maxrss, elapsed, elapsed,
-        loops, blk_min, blk_max, elapsed / (double) loops * 1e6);
 
     return 0;
 }

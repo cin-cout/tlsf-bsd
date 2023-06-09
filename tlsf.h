@@ -32,6 +32,9 @@ typedef struct {
 void *tlsf_resize(tlsf_t *, size_t);
 void *tlsf_aalloc(tlsf_t *, size_t, size_t);
 
+bool tlsf_add_pool(tlsf_t *t, void* mem, size_t mem_size);
+void tlsf_init(tlsf_t *t, void* mem, size_t mem_size);
+
 /**
  * Allocates the requested @size bytes of memory and returns a pointer to it.
  * On failure, returns NULL.

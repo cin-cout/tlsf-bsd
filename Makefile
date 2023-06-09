@@ -7,11 +7,8 @@ TARGETS := $(addprefix $(OUT)/,$(TARGETS))
 
 all: $(TARGETS)
 
-test: all
-	./build/bench
-	./build/bench -s 32
-	./build/bench -s 10:12345
-	./build/test
+run: all
+	sudo taskset -c 5 ./build/bench
 
 CFLAGS += \
   -std=gnu11 -g -O2 \
